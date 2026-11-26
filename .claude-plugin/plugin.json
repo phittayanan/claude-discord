@@ -1,0 +1,28 @@
+{
+  "name": "discord-draft",
+  "version": "0.1.0",
+  "description": "A pane where Claude drafts a Discord message and you press Send to post it to your channel's webhook",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "webhook_url": {
+      "type": "string",
+      "title": "Discord webhook URL",
+      "description": "Channel → Edit Channel → Integrations → Webhooks → Copy Webhook URL. Kept in ~/.claude/settings.json on this computer (not the repo).",
+      "sensitive": false,
+      "required": false
+    },
+    "channel_label": {
+      "type": "string",
+      "title": "Channel name shown in the pane",
+      "default": "#talk",
+      "description": "Shown in the pane title, for example #talk"
+    },
+    "sender_name": {
+      "type": "string",
+      "title": "Name the message is posted under",
+      "default": "Sent via Claude",
+      "description": "The name Discord shows on messages posted through the webhook, for example \"yourname (via Claude)\""
+    }
+  },
+  "license": "MIT"
+}

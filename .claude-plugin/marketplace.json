@@ -1,0 +1,13 @@
+{
+  "name": "claude-discord",
+  "description": "Claude Code mods for talking to a team through Discord",
+  "owner": {
+    "name": "phittayanan"
+  },
+  "plugins": [
+    {
+      "name": "discord-draft",
+      "source": "./"
+    }
+  ]
+}
