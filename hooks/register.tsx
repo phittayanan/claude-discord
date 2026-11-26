@@ -40,8 +40,15 @@ export const register: Register = (on, options) => {
   })
 
   on('command.run', { command: 'discord' }, async $ => {
-    await $.ui.open({ id: PANE, title: `Discord · ${label}` })
-    return { text: 'Discord draft pane opened.' }
+    // A pane the engine still counts as open (closed from the window, or left from before a reload)
+    // only gets retitled by open(), so close it first and open it fresh, with the keyboard.
+    if ((await $.ui.panes()).some(pane => pane.id === PANE)) await $.ui.close({ id: PANE })
+    const opened = await $.ui.open({ id: PANE, title: `Discord · ${label}`, focus: true })
+    return {
+      text: opened.isPlaced
+        ? 'Discord draft pane opened.'
+        : `Discord pane could not be shown: ${'reason' in opened ? opened.reason : 'unknown reason'}.`,
+    }
   })
 
   on('tool.run', { tool: 'mcp__discord-draft__draft_discord' }, async ($, e) => {
@@ -50,11 +57,13 @@ export const register: Register = (on, options) => {
     if (text.length > MAX_LEN) return { result: `Too long for Discord (${text.length} > ${MAX_LEN} characters). Shorten it.`, isError: true }
     await update($, draft, () => text)
     await update($, status, () => ({ kind: 'idle', text: '' }) as SendStatus)
-    const { isPlaced } = await $.ui.open({ id: PANE, title: `Discord · ${label}` })
+    const opened = await $.ui.open({ id: PANE, title: `Discord · ${label}` })
+    // An open the person did not ask for is only drawn on a wide window; the toast tells them either way.
+    $.ui.toast('Discord draft ready: type /discord if the pane is not showing.')
     return {
       result:
-        `Draft placed in the Discord pane${isPlaced ? '' : ' (pane not visible on this surface; /discord opens it)'}. ` +
-        'Not sent: the person reads it and presses Send.',
+        `Draft placed in the Discord pane${opened.isPlaced ? '' : ` (not drawn: ${'reason' in opened ? opened.reason : 'window too narrow'}; the person can type /discord)`}. ` +
+        'Not sent: the person reads it and presses Send. Tell the person to type /discord if they do not see the pane.',
     }
   }).catch(() => ({ result: 'The Discord draft pane failed; nothing was drafted or sent.', isError: true }))
 
