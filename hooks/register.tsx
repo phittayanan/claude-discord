@@ -174,7 +174,7 @@ export const register: Register = (on, options) => {
         {text !== '' && (
           <Input
             key="draft"
-            rows={3}
+            rows={2}
             value={text}
             placeholder="Edit the draft, then press Send."
             submitLabel="save"
