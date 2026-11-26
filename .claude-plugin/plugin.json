@@ -1,7 +1,7 @@
 {
   "name": "discord-draft",
-  "version": "0.1.0",
-  "description": "A pane where Claude drafts a Discord message and you press Send to post it to your channel's webhook",
+  "version": "0.2.1",
+  "description": "A band above the prompt and a pane where Claude drafts a Discord message and you press Send to post it to your channel's webhook",
   "types": "./types/index.d.ts",
   "userConfig": {
     "webhook_url": {

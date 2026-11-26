@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 import type { SendStatus } from '../types'
 
@@ -16,6 +16,59 @@ const status = atom(
 
 const clock = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 
+// Save the webhook, send the draft and clear it: the same for the pane and the band.
+type Channel = { url: string; label: string; sender: string }
+
+function actions($: EngineInterface, { url, label, sender }: Channel) {
+  const saveUrl = async (value: string) => {
+    const v = value.trim()
+    if (!WEBHOOK.test(v)) return update($, status, () => ({ kind: 'error', text: 'That is not a Discord webhook URL. Copy it from Edit Channel → Integrations → Webhooks.' }) as SendStatus)
+    try {
+      // A mod loaded from a folder may carry a suffix on its key (discord-draft@inline.webhook_url).
+      const rows = await $.config.list()
+      const row = rows.find(one => /^discord-draft(@[\w-]+)?\.webhook_url$/.test(one.key))
+      if (!row) return update($, status, () => ({ kind: 'error', text: `Could not save it: no setting row for this mod (${rows.filter(one => one.key.startsWith('discord-draft')).map(one => one.key).join(', ') || 'none'}). Nothing was sent.` }) as SendStatus)
+      const r = await $.config.set({ key: row.key, value: v })
+      if ('deny' in r && r.deny) return update($, status, () => ({ kind: 'error', text: `Could not save it (${r.deny}). Nothing was sent.` }) as SendStatus)
+      return update($, status, () => ({ kind: 'sent', text: 'Webhook saved. Press Send again.' }) as SendStatus)
+    } catch (err) {
+      return update($, status, () => ({ kind: 'error', text: `Could not save it (${String(err).slice(0, 120)}). Nothing was sent.` }) as SendStatus)
+    }
+  }
+
+  const send = async () => {
+    const body = (await read($, draft)).trim()
+    if (!url) return update($, status, () => ({ kind: 'error', text: 'Set the webhook URL first: type /discord and paste it in the box at the top.' }) as SendStatus)
+    if (!WEBHOOK.test(url)) return update($, status, () => ({ kind: 'error', text: 'The webhook URL does not look like a Discord webhook.' }) as SendStatus)
+    if (!body) return update($, status, () => ({ kind: 'error', text: 'Nothing to send.' }) as SendStatus)
+    if (body.length > MAX_LEN) return update($, status, () => ({ kind: 'error', text: `Too long: ${body.length} of ${MAX_LEN} characters.` }) as SendStatus)
+    await update($, status, () => ({ kind: 'sending', text: 'Sending…' }) as SendStatus)
+    try {
+      const res = await $.http.fetch(`${url}?wait=true`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        // allowed_mentions: no @everyone, @here, role or user pings from a draft
+        body: JSON.stringify({ content: body, username: sender, allowed_mentions: { parse: [] } }),
+      })
+      if (res.ok) {
+        await update($, status, () => ({ kind: 'sent', text: `Sent to ${label} at ${clock(new Date())}` }) as SendStatus)
+        await update($, draft, () => '')
+      } else {
+        await update($, status, () => ({ kind: 'error', text: `Discord answered ${res.status}. Nothing was posted.` }) as SendStatus)
+      }
+    } catch {
+      await update($, status, () => ({ kind: 'error', text: 'Could not reach Discord. Nothing was posted.' }) as SendStatus)
+    }
+  }
+
+  const clear = async () => {
+    await update($, draft, () => '')
+    await update($, status, () => ({ kind: 'idle', text: '' }) as SendStatus)
+  }
+
+  return { saveUrl, send, clear }
+}
+
 export const register: Register = (on, options) => {
   const url = String(options.webhook_url ?? '').trim()
   const label = String(options.channel_label ?? '#talk')
@@ -26,8 +79,8 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'draft_discord',
       description:
-        'Put a draft Discord message into the pane beside the chat for the person to read, edit and send. ' +
-        'It never sends: only the person pressing Send in the pane posts it. Plain text, at most 2000 characters. ' +
+        'Put a draft Discord message in the Discord band above the prompt for the person to read, edit and send. ' +
+        'It never sends: only the person pressing Send posts it. Plain text, at most 2000 characters. ' +
         'Write it in the language the person asks for; keep it short and link to GitHub for detail.',
       inputSchema: {
         type: 'object',
@@ -57,13 +110,11 @@ export const register: Register = (on, options) => {
     if (text.length > MAX_LEN) return { result: `Too long for Discord (${text.length} > ${MAX_LEN} characters). Shorten it.`, isError: true }
     await update($, draft, () => text)
     await update($, status, () => ({ kind: 'idle', text: '' }) as SendStatus)
-    const opened = await $.ui.open({ id: PANE, title: `Discord · ${label}` })
-    // An open the person did not ask for is only drawn on a wide window; the toast tells them either way.
-    $.ui.toast('Discord draft ready: type /discord if the pane is not showing.')
+    $.ui.toast('Discord draft ready above the prompt.')
     return {
       result:
-        `Draft placed in the Discord pane${opened.isPlaced ? '' : ` (not drawn: ${'reason' in opened ? opened.reason : 'window too narrow'}; the person can type /discord)`}. ` +
-        'Not sent: the person reads it and presses Send. Tell the person to type /discord if they do not see the pane.',
+        'Draft placed in the Discord band above the prompt (also in the /discord pane). ' +
+        'Not sent: the person reads it and presses Send.',
     }
   }).catch(() => ({ result: 'The Discord draft pane failed; nothing was drafted or sent.', isError: true }))
 
@@ -72,46 +123,7 @@ export const register: Register = (on, options) => {
     const text = await read($, draft)
     const st = await read($, status)
 
-    const saveUrl = async (value: string) => {
-      const v = value.trim()
-      if (!WEBHOOK.test(v)) return update($, status, () => ({ kind: 'error', text: 'That is not a Discord webhook URL. Copy it from Edit Channel → Integrations → Webhooks.' }) as SendStatus)
-      try {
-        // A mod loaded from a folder may carry a suffix on its key (discord-draft@inline.webhook_url).
-        const rows = await $.config.list()
-        const row = rows.find(one => /^discord-draft(@[\w-]+)?\.webhook_url$/.test(one.key))
-        if (!row) return update($, status, () => ({ kind: 'error', text: `Could not save it: no setting row for this mod (${rows.filter(one => one.key.startsWith('discord-draft')).map(one => one.key).join(', ') || 'none'}). Nothing was sent.` }) as SendStatus)
-        const r = await $.config.set({ key: row.key, value: v })
-        if ('deny' in r && r.deny) return update($, status, () => ({ kind: 'error', text: `Could not save it (${r.deny}). Nothing was sent.` }) as SendStatus)
-        return update($, status, () => ({ kind: 'sent', text: 'Webhook saved. Press Send again.' }) as SendStatus)
-      } catch (err) {
-        return update($, status, () => ({ kind: 'error', text: `Could not save it (${String(err).slice(0, 120)}). Nothing was sent.` }) as SendStatus)
-      }
-    }
-
-    const send = async () => {
-      const body = (await read($, draft)).trim()
-      if (!url) return update($, status, () => ({ kind: 'error', text: 'Set the webhook URL first: paste it in the box above.' }) as SendStatus)
-      if (!WEBHOOK.test(url)) return update($, status, () => ({ kind: 'error', text: 'The webhook URL does not look like a Discord webhook.' }) as SendStatus)
-      if (!body) return update($, status, () => ({ kind: 'error', text: 'Nothing to send.' }) as SendStatus)
-      if (body.length > MAX_LEN) return update($, status, () => ({ kind: 'error', text: `Too long: ${body.length} of ${MAX_LEN} characters.` }) as SendStatus)
-      await update($, status, () => ({ kind: 'sending', text: 'Sending…' }) as SendStatus)
-      try {
-        const res = await $.http.fetch(`${url}?wait=true`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          // allowed_mentions: no @everyone, @here, role or user pings from a draft
-          body: JSON.stringify({ content: body, username: sender, allowed_mentions: { parse: [] } }),
-        })
-        if (res.ok) {
-          await update($, status, () => ({ kind: 'sent', text: `Sent to ${label} at ${clock(new Date())}` }) as SendStatus)
-          await update($, draft, () => '')
-        } else {
-          await update($, status, () => ({ kind: 'error', text: `Discord answered ${res.status}. Nothing was posted.` }) as SendStatus)
-        }
-      } catch {
-        await update($, status, () => ({ kind: 'error', text: 'Could not reach Discord. Nothing was posted.' }) as SendStatus)
-      }
-    }
+    const { saveUrl, send, clear } = actions($, { url, label, sender })
 
     return (
       <Box flexDirection="column" gap={1}>
@@ -135,19 +147,48 @@ export const register: Register = (on, options) => {
         <Text dimColor>{text.length} / {MAX_LEN}</Text>
         <Box flexDirection="row" gap={1}>
           <Button key="send" onPress={send}>Send</Button>
-          <Button
-            key="clear"
-            onPress={async () => {
-              await update($, draft, () => '')
-              await update($, status, () => ({ kind: 'idle', text: '' }) as SendStatus)
-            }}
-          >
-            Clear
-          </Button>
+          <Button key="clear" onPress={clear}>Clear</Button>
         </Box>
         {st.text !== '' && (
           <Text color={st.kind === 'error' ? 'red' : st.kind === 'sent' ? 'green' : undefined}>{st.text}</Text>
         )}
+      </Box>
+    )
+  })
+
+  // The band above the prompt: shown only while there is a draft or a send result to read.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const text = await read($, draft)
+    const st = await read($, status)
+    if (e.props.hasSurvey || (text === '' && st.kind === 'idle')) return next(e)
+
+    const { Box, Text, Button, Input } = $.ui.resolve(e)
+    const { send, clear } = actions($, { url, label, sender })
+
+    return (
+      <Box flexDirection="column">
+        <Box flexDirection="row" gap={1}>
+          <Text bold>{`Discord · ${label}`}</Text>
+          <Text dimColor>{`posts as ${sender} · ${text.length} / ${MAX_LEN}`}</Text>
+        </Box>
+        {text !== '' && (
+          <Input
+            key="draft"
+            rows={3}
+            value={text}
+            placeholder="Edit the draft, then press Send."
+            submitLabel="save"
+            onInput={value => void update($, draft, () => value)}
+            onSubmit={value => void update($, draft, () => value)}
+          />
+        )}
+        <Box flexDirection="row" gap={1}>
+          {text !== '' && <Button key="send" onPress={send}>Send</Button>}
+          <Button key="clear" onPress={clear}>{text === '' ? 'Dismiss' : 'Clear'}</Button>
+          {st.text !== '' && (
+            <Text color={st.kind === 'error' ? 'red' : st.kind === 'sent' ? 'green' : undefined}>{st.text}</Text>
+          )}
+        </Box>
       </Box>
     )
   })

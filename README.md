@@ -1,6 +1,6 @@
 # discord-draft
 
-A Claude Code mod that adds a **Discord pane** beside the chat. Claude drafts a message into the pane; you read it, edit it, and press **Send** to post it to one Discord channel through that channel's webhook. Claude cannot send by itself: nothing leaves until you press Send.
+A Claude Code mod that adds a **Discord band** above the prompt and a **Discord pane** beside the chat. Claude drafts a message into the pane; you read it, edit it, and press **Send** to post it to one Discord channel through that channel's webhook. Claude cannot send by itself: nothing leaves until you press Send.
 
 ## Install
 
@@ -22,8 +22,8 @@ The webhook URL is a secret: anyone who has it can post to that channel. Paste i
 
 ## Use
 
-- Ask Claude: "draft a Discord message to the team about …". Claude calls the `draft_discord` tool, which puts the text in the pane.
-- Edit the text if you want, then press **Send**, or **Clear** to drop it.
+- Ask Claude: "draft a Discord message to the team about …". Claude calls the `draft_discord` tool, which puts the text in the band above the prompt (and in the `/discord` pane). The band shows only while there is a draft or a send result.
+- Edit the text if you want, then press **Send** in the band or the pane, or **Clear** to drop it. `[-]` beside the band folds it away.
 - The pane shows green "Sent to #channel at HH:MM" when Discord accepted it, or red with the reason (the draft is kept).
 - Mentions such as `@everyone`, roles and users never ping: the mod turns them off on every post.
 - Discord's limit is 2000 characters per message; the pane shows the count.
