@@ -1,7 +1,7 @@
 {
   "name": "discord-draft",
-  "version": "0.2.2",
-  "description": "A band above the prompt and a pane where Claude drafts a Discord message and you press Send to post it to your channel's webhook",
+  "version": "0.3.0",
+  "description": "A band above the prompt and a pane where Claude drafts a Discord message and you press Send to post it to your channel's webhook, plus a read-only tool that reads the channel through a bot",
   "types": "./types/index.d.ts",
   "userConfig": {
     "webhook_url": {
@@ -22,6 +22,19 @@
       "title": "Name the message is posted under",
       "default": "Sent via Claude",
       "description": "The name Discord shows on messages posted through the webhook, for example \"yourname (via Claude)\""
+    },
+    "bot_token": {
+      "type": "string",
+      "title": "Discord bot token (read-only bot)",
+      "description": "Paste it in the /discord pane, not here. Developer Portal → your application → Bot → Reset Token. A secret: reset it if it leaks.",
+      "sensitive": false,
+      "required": false
+    },
+    "channel_id": {
+      "type": "string",
+      "title": "Channel id to read",
+      "default": "1575536526782111934",
+      "description": "The channel read_discord reads (Developer Mode → right-click the channel → Copy Channel ID)"
     }
   },
   "license": "MIT"
